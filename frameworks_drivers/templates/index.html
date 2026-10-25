@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+    <meta charset="UTF-8">
+    <title>Livraria O2O - Arquitetura Clean (Ex. 7.4)</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, sans-serif; background: #eef2f5; margin: 0; padding: 20px; color: #2c3e50; }
+        .header { background: #006266; color: white; padding: 15px 25px; border-radius: 8px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+        .container { display: grid; grid-template-columns: 1.4fr 1fr; gap: 20px; }
+        .card { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.06); margin-bottom: 20px; }
+        .book-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 15px; }
+        .book-item { border: 1px solid #dfe4ea; border-radius: 8px; padding: 14px; display: flex; flex-direction: column; justify-content: space-between; }
+        button { background: #006266; color: white; border: none; padding: 9px 14px; border-radius: 5px; cursor: pointer; font-weight: bold; }
+        button:hover { opacity: 0.9; }
+        .btn-pix { background: #20bf6b; width: 100%; padding: 12px; font-size: 15px; margin-top: 10px; }
+        input, select { padding: 9px; border: 1px solid #ccc; border-radius: 5px; width: 100%; box-sizing: border-box; margin-bottom: 8px; }
+        .flash { padding: 12px; border-radius: 6px; margin-bottom: 15px; font-weight: bold; }
+        .flash.sucesso { background: #d1e7dd; color: #0f5132; }
+        .flash.erro { background: #f8d7da; color: #842029; }
+        pre { background: #1e272e; color: #0be881; padding: 12px; border-radius: 6px; overflow-x: auto; font-size: 12px; max-height: 180px; }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <div>
+            <h2 style="margin:0;">🏛️ Livraria O2O — Clean Architecture (DIP + Persistência TXT)</h2>
+            <small>Entities → Use Cases (Port) ← Interface Adapters ← Frameworks & Drivers (bd_livraria.txt)</small>
+        </div>
+        <div><strong>🛒 Itens no Carrinho: {{ vm.carrinho|length }}</strong></div>
+    </div>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+                <div class="flash {{ category }}">{{ message }}</div>
+            {% endfor %}
+        {% endif %}
+    {% endwith %}
+
+    <div class="container">
+        <!-- Coluna Esquerda: Catálogo e Nova Feature de Avaliações -->
+        <div>
+            <div class="card">
+                <form method="GET" action="/" style="display: flex; gap: 10px;">
+                    <input type="text" name="q" placeholder="Pesquisar por título ou autor..." value="{{ vm.termo_atual }}" style="margin-bottom:0;">
+                    <button type="submit">🔍 Filtrar</button>
+                </form>
+            </div>
+
+            <div class="card">
+                <h3>📚 Catálogo da Livraria (Nota calculada a partir do TXT)</h3>
+                <div class="book-grid">
+                    {% for livro in vm.livros %}
+                    <div class="book-item">
+                        <div>
+                            <strong style="color:#006266; font-size:15px;">{{ livro.titulo }}</strong><br>
+                            <small>{{ livro.autor }} ({{ livro.genero }})</small><br>
+                            <small>ISBN: <code>{{ livro.isbn }}</code></small><br>
+                            <small style="color:#f39c12; font-weight:bold;">⭐ Média: {{ livro.media_estrelas }} / 5.0</small>
+                            <p style="color:#20bf6b; font-size:17px; font-weight:bold; margin:8px 0;">R$ {{ "%.2f"|format(livro.preco) }}</p>
+                        </div>
+                        <form method="POST" action="/adicionar/{{ livro.id }}">
+                            <button type="submit" style="width: 100%;">+ Adicionar ao Carrinho</button>
+                        </form>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+
+            <div class="card">
+                <h3>⭐ Nova Feature: Avaliar Livro (Persistido em <code>bd_livraria.txt</code>)</h3>
+                <form method="POST" action="/avaliar">
+                    <select name="livro_id" required>
+                        {% for livro in vm.livros %}
+                            <option value="{{ livro.id }}">{{ livro.titulo }}</option>
+                        {% endfor %}
+                    </select>
+                    <input type="text" name="utilizador" placeholder="O seu nome (ex: Ana Silva)" required>
+                    <input type="number" name="nota" min="1" max="5" placeholder="Nota de 1 a 5 estrelas" required>
+                    <input type="text" name="comentario" placeholder="Escreva a sua opinião sobre o livro..." required>
+                    <button type="submit" style="width:100%;">Guardar Avaliação no TXT</button>
+                </form>
+            </div>
+        </div>
+
+        <!-- Coluna Direita: Scan & Go, Checkout com CPF e Monitor do Ficheiro TXT -->
+        <div>
+            <div class="card">
+                <h3>📸 Scan & Go (Leitura de ISBN na Loja)</h3>
+                <form method="POST" action="/scan" style="display: flex; gap: 8px;">
+                    <input type="text" name="isbn" placeholder="Ex: 9780451524935" required style="margin-bottom:0;">
+                    <button type="submit">Escanear</button>
+                </form>
+            </div>
+
+            <div class="card">
+                <h3>🛒 Carrinho & Emissão de Recibo no TXT</h3>
+                {% if vm.carrinho %}
+                    <ul style="list-style:none; padding:0;">
+                        {% for item in vm.carrinho %}
+                        <li style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid #eee;">
+                            <span>{{ item.titulo }} (R$ {{ "%.2f"|format(item.preco) }})</span>
+                            <form method="POST" action="/remover/{{ loop.index0 }}">
+                                <button type="submit" style="background:#eb3b5a; padding:3px 8px; font-size:12px;">X</button>
+                            </form>
+                        </li>
+                        {% endfor %}
+                    </ul>
+                    <h4 style="text-align:right;">Subtotal: R$ {{ "%.2f"|format(vm.subtotal) }}</h4>
+                    <form method="POST" action="/checkout">
+                        <input type="text" name="cpf" placeholder="CPF na Nota (Opcional - ex: 123.456.789-00)">
+                        <button type="submit" class="btn-pix">❖ Pagar via PIX e Gravar Recibo no TXT</button>
+                    </form>
+                {% else %}
+                    <p style="color:#7f8c8d;">O carrinho está vazio.</p>
+                {% endif %}
+
+                {% if vm.ultimo_qr %}
+                <div style="background:#e8f8f5; border:2px dashed #20bf6b; padding:10px; border-radius:6px; margin-top:12px; font-size:12px;">
+                    <strong>✅ COMPRA GRAVADA NO FICHEIRO TXT:</strong><br>
+                    <code>{{ vm.ultimo_qr }}</code>
+                </div>
+                {% endif %}
+            </div>
+
+            <div class="card">
+                <h3>📄 Registos Lidos de <code>bd_livraria.txt</code></h3>
+                <strong>Recibos Fiscais Persistidos:</strong>
+                <pre>{% for r in vm.recibos_persistidos %}{{ r }}&#10;{% else %}Nenhum recibo registado no TXT ainda.{% endfor %}</pre>
+
+                <strong>Avaliações de Leitores Persistidas:</strong>
+                <pre>{% for a in vm.avaliacoes_persistidas %}[{{ a.titulo_livro }}] ⭐ {{ a.nota }}/5 por {{ a.utilizador }}: "{{ a.comentario }}"&#10;{% else %}Nenhuma avaliação registada no TXT ainda.{% endfor %}</pre>
+            </div>
+        </div>
+    </div>
+
+</body>
+</html>
